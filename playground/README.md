@@ -27,6 +27,26 @@ threads silently loses updates — reproduced losing exactly 1,000,000
 updates on some runs. Fixed the same way: a `std::mutex` around the
 read-modify-write.
 
+### 3. `producer_consumer_demo.cpp` — waiting for another thread, correctly
+
+A consumer needs data a producer thread creates after a 1-second delay.
+
+**Naive version (broken)**: consumer checks a plain `bool ready` flag
+exactly once, immediately, with no actual waiting. Reproduced reliably:
+`"Consumer: data not ready yet!"` printed before the producer had even
+started its delay — the consumer never gave the producer a chance.
+
+**Fix**: `std::condition_variable` + `std::mutex`. The consumer calls
+`cv.wait(lock, predicate)`, which genuinely sleeps (no CPU spinning) until
+`notify_one()` is called *and* the predicate (`ready == true`) holds — the
+predicate form matters even with a real notify, since it guards against
+spurious wakeups and against a notify arriving before `wait()` was called.
+Verified across 5 runs: consumer always got `data = 42`, never "not ready".
+
+This is the same wait/notify mechanism Sentinel's stampede protection will
+reuse later: concurrent callers for the same in-flight key will wait on a
+condition variable instead of duplicating work.
+
 ## How to build and run (Windows / VS Code Code Runner, or any g++)
 
 ```
@@ -35,6 +55,9 @@ g++ -std=c++14 -Wall -Wextra -Wpedantic -pthread -g -O0 concurrent_demo.cpp -o c
 
 g++ -std=c++14 -Wall -Wextra -Wpedantic -pthread -g -O0 shared_counter_demo.cpp -o shared_counter_demo
 ./shared_counter_demo
+
+g++ -std=c++14 -Wall -Wextra -Wpedantic -pthread -g -O0 producer_consumer_demo.cpp -o producer_consumer_demo
+./producer_consumer_demo
 ```
 
 ## Status
